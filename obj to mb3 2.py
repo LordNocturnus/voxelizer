@@ -81,7 +81,13 @@ class Block:
         self.size = size
         self.prog = prog
         self.calcs = len(faces[0])
-        flag = True
+        self.points = {}
+        self.edges = []
+        self.sides = []
+        self.faces = []
+        self.children = []
+        self.parent_faces = faces
+        self.flag = True
 
         if size >= 16:
             temp = 0
@@ -94,256 +100,258 @@ class Block:
                          math.floor((pos[1] + (model_scale / 2 - center)) / 16),
                          math.floor((pos[2] + (model_scale / 2 - center)) / 16)]
             if "{}-{}-{}.mb3d".format(exact_pos[0], exact_pos[1], exact_pos[2]) in onlyfiles:
-                flag = False
+                self.flag = False
 
         if self.size <= 16:
             self.cube = np.chararray((int(self.size), int(self.size), int(self.size)), itemsize=16)
             self.cube[:] = "0"
 
-        if flag == True:
-            self.points = {}
-            self.edges = []
-            for x in range(-1, 2, 2):
-                for y in range(-1, 2, 2):
-                    for z in range(-1, 2, 2):
-                        start = np.array([pos[0] + x * size / 2, pos[1] + y * size / 2, pos[2] + z * size / 2])
-                        if x < 0:
-                            self.edges.append((start, np.array([size, 0, 0])))
-                        if y < 0:
-                            self.edges.append((start, np.array([0, size, 0])))
-                        if z < 0:
-                            self.edges.append((start, np.array([0, 0, size])))
+        if self.flag:
+            self.check_faces()
+            self.subdivide()
 
-            self.sides = []
-            p1 = np.array([pos[0] - size / 2, pos[1] - size / 2, pos[2] - size / 2])
+    def check_faces(self):
+        for x in range(-1, 2, 2):
+            for y in range(-1, 2, 2):
+                for z in range(-1, 2, 2):
+                    start = np.array([self.pos[0] + x * self.size / 2, self.pos[1] + y * self.size / 2, self.pos[2] + z * self.size / 2])
+                    if x < 0:
+                        self.edges.append((start, np.array([self.size, 0, 0])))
+                    if y < 0:
+                        self.edges.append((start, np.array([0, self.size, 0])))
+                    if z < 0:
+                        self.edges.append((start, np.array([0, 0, self.size])))
 
-            p2 = np.array([pos[0] + size / 2, pos[1] - size / 2, pos[2] - size / 2])
-            p3 = np.array([pos[0] - size / 2, pos[1] + size / 2, pos[2] - size / 2])
-            p4 = np.array([pos[0] - size / 2, pos[1] - size / 2, pos[2] + size / 2])
+        p1 = np.array([self.pos[0] - self.size / 2, self.pos[1] - self.size / 2, self.pos[2] - self.size / 2])
 
-            p5 = np.array([pos[0] - size / 2, pos[1] + size / 2, pos[2] + size / 2])
-            p6 = np.array([pos[0] + size / 2, pos[1] - size / 2, pos[2] + size / 2])
-            p7 = np.array([pos[0] + size / 2, pos[1] + size / 2, pos[2] - size / 2])
+        p2 = np.array([self.pos[0] + self.size / 2, self.pos[1] - self.size / 2, self.pos[2] - self.size / 2])
+        p3 = np.array([self.pos[0] - self.size / 2, self.pos[1] + self.size / 2, self.pos[2] - self.size / 2])
+        p4 = np.array([self.pos[0] - self.size / 2, self.pos[1] - self.size / 2, self.pos[2] + self.size / 2])
 
-            p8 = np.array([pos[0] + size / 2, pos[1] + size / 2, pos[2] + size / 2])
+        p5 = np.array([self.pos[0] - self.size / 2, self.pos[1] + self.size / 2, self.pos[2] + self.size / 2])
+        p6 = np.array([self.pos[0] + self.size / 2, self.pos[1] - self.size / 2, self.pos[2] + self.size / 2])
+        p7 = np.array([self.pos[0] + self.size / 2, self.pos[1] + self.size / 2, self.pos[2] - self.size / 2])
 
-            self.sides.append(CubeSide(p1, p2, p6, p4))
-            self.sides.append(CubeSide(p1, p3, p7, p2))
-            self.sides.append(CubeSide(p1, p3, p5, p4))
+        p8 = np.array([self.pos[0] + self.size / 2, self.pos[1] + self.size / 2, self.pos[2] + self.size / 2])
 
-            self.sides.append(CubeSide(p8, p7, p3, p5))
-            self.sides.append(CubeSide(p8, p6, p2, p7))
-            self.sides.append(CubeSide(p8, p6, p4, p5))
+        self.sides.append(CubeSide(p1, p2, p6, p4))
+        self.sides.append(CubeSide(p1, p3, p7, p2))
+        self.sides.append(CubeSide(p1, p3, p5, p4))
 
-            point_count = np.zeros((len(faces[0])))
-            points = np.zeros((len(faces[0]), 2))
+        self.sides.append(CubeSide(p8, p7, p3, p5))
+        self.sides.append(CubeSide(p8, p6, p2, p7))
+        self.sides.append(CubeSide(p8, p6, p4, p5))
 
-            truth = np.logical_and(faces[0][:, 0, 0] >= self.pos[0] - self.size / 2,
-                                   faces[0][:, 0, 0] <= self.pos[0] + self.size / 2)
-            truth = np.logical_and(faces[0][:, 0, 1] >= self.pos[1] - self.size / 2, truth)
-            truth = np.logical_and(faces[0][:, 0, 1] <= self.pos[1] + self.size / 2, truth)
-            truth = np.logical_and(faces[0][:, 0, 2] >= self.pos[2] - self.size / 2, truth)
-            truth = np.logical_and(faces[0][:, 0, 2] <= self.pos[2] + self.size / 2, truth)
+        point_count = np.zeros((len(self.parent_faces[0])))
+        points = np.zeros((len(self.parent_faces[0]), 2))
 
-            points[truth] = np.floor(np.einsum('ij,ijk->ik', faces[0][:, 0], faces[5][:])[truth])
+        truth = np.logical_and(self.parent_faces[0][:, 0, 0] >= self.pos[0] - self.size / 2,
+                               self.parent_faces[0][:, 0, 0] <= self.pos[0] + self.size / 2)
+        truth = np.logical_and(self.parent_faces[0][:, 0, 1] >= self.pos[1] - self.size / 2, truth)
+        truth = np.logical_and(self.parent_faces[0][:, 0, 1] <= self.pos[1] + self.size / 2, truth)
+        truth = np.logical_and(self.parent_faces[0][:, 0, 2] >= self.pos[2] - self.size / 2, truth)
+        truth = np.logical_and(self.parent_faces[0][:, 0, 2] <= self.pos[2] + self.size / 2, truth)
+
+        points[truth] = np.floor(np.einsum('ij,ijk->ik', self.parent_faces[0][:, 0], self.parent_faces[5][:])[truth])
+        point_count[truth] += 1
+        # if len(self.prog) >= 2 and self.prog[-1] == 2.0:
+        #    print("debug")
+
+        truth = np.logical_and(self.parent_faces[0][:, 1, 0] >= self.pos[0] - self.size / 2,
+                               self.parent_faces[0][:, 1, 0] <= self.pos[0] + self.size / 2)
+        truth = np.logical_and(self.parent_faces[0][:, 1, 1] >= self.pos[1] - self.size / 2, truth)
+        truth = np.logical_and(self.parent_faces[0][:, 1, 1] <= self.pos[1] + self.size / 2, truth)
+        truth = np.logical_and(self.parent_faces[0][:, 1, 2] >= self.pos[2] - self.size / 2, truth)
+        truth = np.logical_and(self.parent_faces[0][:, 1, 2] <= self.pos[2] + self.size / 2, truth)
+
+        points[truth] = np.floor(np.einsum('ij,ijk->ik', self.parent_faces[0][:, 1], self.parent_faces[5][:])[truth])
+        point_count[truth] += 1
+        # if len(self.prog) >= 2 and self.prog[-1] == 2.0:
+        #    print("debug")
+
+        truth = np.logical_and(self.parent_faces[0][:, 2, 0] >= self.pos[0] - self.size / 2,
+                               self.parent_faces[0][:, 2, 0] <= self.pos[0] + self.size / 2)
+        truth = np.logical_and(self.parent_faces[0][:, 2, 1] >= self.pos[1] - self.size / 2, truth)
+        truth = np.logical_and(self.parent_faces[0][:, 2, 1] <= self.pos[1] + self.size / 2, truth)
+        truth = np.logical_and(self.parent_faces[0][:, 2, 2] >= self.pos[2] - self.size / 2, truth)
+        truth = np.logical_and(self.parent_faces[0][:, 2, 2] <= self.pos[2] + self.size / 2, truth)
+
+        points[truth] = np.floor(np.einsum('ij,ijk->ik', self.parent_faces[0][:, 1], self.parent_faces[5][:])[truth])
+        point_count[truth] += 1
+        # if len(self.prog) >= 2 and self.prog[-1] == 2.0:
+        #    print("debug")
+
+        for edge in self.edges:
+            rel = -(np.sum(self.parent_faces[2][:] * edge[0], axis=1) + self.parent_faces[3][:]) / np.sum(self.parent_faces[2][:] * edge[1], axis=1)
+            truth = np.logical_and(np.isfinite(rel), rel < 1)
+            truth = np.logical_and(truth, rel > 0)
+
+            p = np.asarray([edge[0]] * len(rel)) + np.asarray([edge[1]] * len(rel)) * np.transpose(
+                np.asarray([rel] * 3))
+
+            dis = np.sum(self.parent_faces[2][:] * p, axis=1) + self.parent_faces[3][:]
+            point = p + self.parent_faces[2][:] * np.transpose(np.asarray([dis] * 3))
+            edge_p1 = self.parent_faces[0][:, 0] - point
+            edge_p2 = self.parent_faces[0][:, 1] - point
+            edge_p3 = self.parent_faces[0][:, 2] - point
+            alpha = np.linalg.norm(np.cross(edge_p1, edge_p2, axis=1), axis=1) / self.parent_faces[4][:]
+            beta = np.linalg.norm(np.cross(edge_p2, edge_p3, axis=1), axis=1) / self.parent_faces[4][:]
+            gamma = np.linalg.norm(np.cross(edge_p3, edge_p1, axis=1), axis=1) / self.parent_faces[4][:]
+
+            perc = alpha + beta + gamma
+            truth = np.logical_and(truth, perc <= 1.0000000000000018)
+            truth = np.logical_and(truth, np.linalg.norm(edge_p1, axis=1) != 0.0)
+            truth = np.logical_and(truth, np.linalg.norm(edge_p2, axis=1) != 0.0)
+            truth = np.logical_and(truth, np.linalg.norm(edge_p2, axis=1) != 0.0)
+
+            points[truth] = np.floor(np.einsum('ij,ijk->ik', point[truth], self.parent_faces[5][truth]))
             point_count[truth] += 1
             # if len(self.prog) >= 2 and self.prog[-1] == 2.0:
             #    print("debug")
 
-            truth = np.logical_and(faces[0][:, 1, 0] >= self.pos[0] - self.size / 2,
-                                   faces[0][:, 1, 0] <= self.pos[0] + self.size / 2)
-            truth = np.logical_and(faces[0][:, 1, 1] >= self.pos[1] - self.size / 2, truth)
-            truth = np.logical_and(faces[0][:, 1, 1] <= self.pos[1] + self.size / 2, truth)
-            truth = np.logical_and(faces[0][:, 1, 2] >= self.pos[2] - self.size / 2, truth)
-            truth = np.logical_and(faces[0][:, 1, 2] <= self.pos[2] + self.size / 2, truth)
+        for side in self.sides:
+            side.normal = np.asarray([side.normal] * len(self.parent_faces[0]))
+            side.d = np.asarray([side.d] * len(self.parent_faces[0]))
+            side.area = np.asarray([side.area] * len(self.parent_faces[0]))
+            side.p1 = np.asarray([side.p1] * len(self.parent_faces[0]))
+            side.p2 = np.asarray([side.p2] * len(self.parent_faces[0]))
+            side.p3 = np.asarray([side.p3] * len(self.parent_faces[0]))
+            side.p4 = np.asarray([side.p4] * len(self.parent_faces[0]))
 
-            points[truth] = np.floor(np.einsum('ij,ijk->ik', faces[0][:, 1], faces[5][:])[truth])
+            # ab
+
+            rel = -(np.sum(side.normal * self.parent_faces[0][:, 0], axis=1) + side.d) / np.sum(side.normal
+                                                                                    * (self.parent_faces[0][:, 1]
+                                                                                       - self.parent_faces[0][:, 0]), axis=1)
+            truth = np.logical_and(np.isfinite(rel), rel < 1)
+            truth = np.logical_and(truth, rel > 0)
+
+            p = self.parent_faces[0][:, 0] + (self.parent_faces[0][:, 1] - self.parent_faces[0][:, 0]) * np.transpose(np.asarray([rel] * 3))
+
+            dis = np.sum(side.normal * p, axis=1) + side.d
+            point = p + side.normal * np.transpose(np.asarray([dis] * 3))
+            side_p1 = side.p1 - point
+            side_p2 = side.p2 - point
+            side_p3 = side.p3 - point
+            side_p4 = side.p4 - point
+            alpha = np.linalg.norm(np.cross(side_p1, side_p2, axis=1), axis=1) / side.area
+            beta = np.linalg.norm(np.cross(side_p2, side_p3, axis=1), axis=1) / side.area
+            gamma = np.linalg.norm(np.cross(side_p3, side_p4, axis=1), axis=1) / side.area
+            delta = np.linalg.norm(np.cross(side_p4, side_p1, axis=1), axis=1) / side.area
+
+            perc = alpha + beta + gamma + delta
+            truth = np.logical_and(truth, perc <= 1.0000000000000018)
+
+            points[truth] = np.floor(np.einsum('ij,ijk->ik', point[truth], self.parent_faces[5][truth]))
             point_count[truth] += 1
             # if len(self.prog) >= 2 and self.prog[-1] == 2.0:
             #    print("debug")
 
-            truth = np.logical_and(faces[0][:, 2, 0] >= self.pos[0] - self.size / 2,
-                                   faces[0][:, 2, 0] <= self.pos[0] + self.size / 2)
-            truth = np.logical_and(faces[0][:, 2, 1] >= self.pos[1] - self.size / 2, truth)
-            truth = np.logical_and(faces[0][:, 2, 1] <= self.pos[1] + self.size / 2, truth)
-            truth = np.logical_and(faces[0][:, 2, 2] >= self.pos[2] - self.size / 2, truth)
-            truth = np.logical_and(faces[0][:, 2, 2] <= self.pos[2] + self.size / 2, truth)
+            # ac
 
-            points[truth] = np.floor(np.einsum('ij,ijk->ik', faces[0][:, 1], faces[5][:])[truth])
+            rel = -(np.sum(side.normal * self.parent_faces[0][:, 0], axis=1) + side.d) / np.sum(side.normal
+                                                                                    * (self.parent_faces[0][:, 2]
+                                                                                       - self.parent_faces[0][:, 0]), axis=1)
+            truth = np.logical_and(np.isfinite(rel), rel < 1)
+            truth = np.logical_and(truth, rel > 0)
+
+            p = self.parent_faces[0][:, 0] + (self.parent_faces[0][:, 2] - self.parent_faces[0][:, 0]) * np.transpose(np.asarray([rel] * 3))
+
+            dis = np.sum(side.normal * p, axis=1) + side.d
+            point = p + side.normal * np.transpose(np.asarray([dis] * 3))
+            side_p1 = side.p1 - point
+            side_p2 = side.p2 - point
+            side_p3 = side.p3 - point
+            side_p4 = side.p4 - point
+            alpha = np.linalg.norm(np.cross(side_p1, side_p2, axis=1), axis=1) / side.area
+            beta = np.linalg.norm(np.cross(side_p2, side_p3, axis=1), axis=1) / side.area
+            gamma = np.linalg.norm(np.cross(side_p3, side_p4, axis=1), axis=1) / side.area
+            delta = np.linalg.norm(np.cross(side_p4, side_p1, axis=1), axis=1) / side.area
+
+            perc = alpha + beta + gamma + delta
+            truth = np.logical_and(truth, perc <= 1.0000000000000018)
+
+            points[truth] = np.floor(np.einsum('ij,ijk->ik', point[truth], self.parent_faces[5][truth]))
             point_count[truth] += 1
             # if len(self.prog) >= 2 and self.prog[-1] == 2.0:
             #    print("debug")
 
-            for edge in self.edges:
-                rel = -(np.sum(faces[2][:] * edge[0], axis=1) + faces[3][:]) / np.sum(faces[2][:] * edge[1], axis=1)
-                truth = np.logical_and(np.isfinite(rel), rel < 1)
-                truth = np.logical_and(truth, rel > 0)
+            # bc
 
-                p = np.asarray([edge[0]] * len(rel)) + np.asarray([edge[1]] * len(rel)) * np.transpose(
-                    np.asarray([rel] * 3))
+            rel = -(np.sum(side.normal * self.parent_faces[0][:, 1], axis=1) + side.d) / np.sum(side.normal
+                                                                                    * (self.parent_faces[0][:, 2]
+                                                                                       - self.parent_faces[0][:, 1]), axis=1)
+            truth = np.logical_and(np.isfinite(rel), rel < 1)
+            truth = np.logical_and(truth, rel > 0)
 
-                dis = np.sum(faces[2][:] * p, axis=1) + faces[3][:]
-                point = p + faces[2][:] * np.transpose(np.asarray([dis] * 3))
-                edge_p1 = faces[0][:, 0] - point
-                edge_p2 = faces[0][:, 1] - point
-                edge_p3 = faces[0][:, 2] - point
-                alpha = np.linalg.norm(np.cross(edge_p1, edge_p2, axis=1), axis=1) / faces[4][:]
-                beta = np.linalg.norm(np.cross(edge_p2, edge_p3, axis=1), axis=1) / faces[4][:]
-                gamma = np.linalg.norm(np.cross(edge_p3, edge_p1, axis=1), axis=1) / faces[4][:]
+            p = self.parent_faces[0][:, 1] + (self.parent_faces[0][:, 2] - self.parent_faces[0][:, 1]) * np.transpose(np.asarray([rel] * 3))
 
-                perc = alpha + beta + gamma
-                truth = np.logical_and(truth, perc <= 1.0000000000000018)
-                truth = np.logical_and(truth, np.linalg.norm(edge_p1, axis=1) != 0.0)
-                truth = np.logical_and(truth, np.linalg.norm(edge_p2, axis=1) != 0.0)
-                truth = np.logical_and(truth, np.linalg.norm(edge_p2, axis=1) != 0.0)
+            dis = np.sum(side.normal * p, axis=1) + side.d
+            point = p + side.normal * np.transpose(np.asarray([dis] * 3))
+            side_p1 = side.p1 - point
+            side_p2 = side.p2 - point
+            side_p3 = side.p3 - point
+            side_p4 = side.p4 - point
+            alpha = np.linalg.norm(np.cross(side_p1, side_p2, axis=1), axis=1) / side.area
+            beta = np.linalg.norm(np.cross(side_p2, side_p3, axis=1), axis=1) / side.area
+            gamma = np.linalg.norm(np.cross(side_p3, side_p4, axis=1), axis=1) / side.area
+            delta = np.linalg.norm(np.cross(side_p4, side_p1, axis=1), axis=1) / side.area
 
-                points[truth] = np.floor(np.einsum('ij,ijk->ik', point[truth], faces[5][truth]))
-                point_count[truth] += 1
-                # if len(self.prog) >= 2 and self.prog[-1] == 2.0:
-                #    print("debug")
+            perc = alpha + beta + gamma + delta
+            truth = np.logical_and(truth, perc <= 1.0000000000000018)
 
-            for side in self.sides:
-                side.normal = np.asarray([side.normal] * len(faces[0]))
-                side.d = np.asarray([side.d] * len(faces[0]))
-                side.area = np.asarray([side.area] * len(faces[0]))
-                side.p1 = np.asarray([side.p1] * len(faces[0]))
-                side.p2 = np.asarray([side.p2] * len(faces[0]))
-                side.p3 = np.asarray([side.p3] * len(faces[0]))
-                side.p4 = np.asarray([side.p4] * len(faces[0]))
-
-                # ab
-
-                rel = -(np.sum(side.normal * faces[0][:, 0], axis=1) + side.d) / np.sum(side.normal
-                                                                                        * (faces[0][:, 1]
-                                                                                           - faces[0][:, 0]), axis=1)
-                truth = np.logical_and(np.isfinite(rel), rel < 1)
-                truth = np.logical_and(truth, rel > 0)
-
-                p = faces[0][:, 0] + (faces[0][:, 1] - faces[0][:, 0]) * np.transpose(np.asarray([rel] * 3))
-
-                dis = np.sum(side.normal * p, axis=1) + side.d
-                point = p + side.normal * np.transpose(np.asarray([dis] * 3))
-                side_p1 = side.p1 - point
-                side_p2 = side.p2 - point
-                side_p3 = side.p3 - point
-                side_p4 = side.p4 - point
-                alpha = np.linalg.norm(np.cross(side_p1, side_p2, axis=1), axis=1) / side.area
-                beta = np.linalg.norm(np.cross(side_p2, side_p3, axis=1), axis=1) / side.area
-                gamma = np.linalg.norm(np.cross(side_p3, side_p4, axis=1), axis=1) / side.area
-                delta = np.linalg.norm(np.cross(side_p4, side_p1, axis=1), axis=1) / side.area
-
-                perc = alpha + beta + gamma + delta
-                truth = np.logical_and(truth, perc <= 1.0000000000000018)
-
-                points[truth] = np.floor(np.einsum('ij,ijk->ik', point[truth], faces[5][truth]))
-                point_count[truth] += 1
-                # if len(self.prog) >= 2 and self.prog[-1] == 2.0:
-                #    print("debug")
-
-                # ac
-
-                rel = -(np.sum(side.normal * faces[0][:, 0], axis=1) + side.d) / np.sum(side.normal
-                                                                                        * (faces[0][:, 2]
-                                                                                           - faces[0][:, 0]), axis=1)
-                truth = np.logical_and(np.isfinite(rel), rel < 1)
-                truth = np.logical_and(truth, rel > 0)
-
-                p = faces[0][:, 0] + (faces[0][:, 2] - faces[0][:, 0]) * np.transpose(np.asarray([rel] * 3))
-
-                dis = np.sum(side.normal * p, axis=1) + side.d
-                point = p + side.normal * np.transpose(np.asarray([dis] * 3))
-                side_p1 = side.p1 - point
-                side_p2 = side.p2 - point
-                side_p3 = side.p3 - point
-                side_p4 = side.p4 - point
-                alpha = np.linalg.norm(np.cross(side_p1, side_p2, axis=1), axis=1) / side.area
-                beta = np.linalg.norm(np.cross(side_p2, side_p3, axis=1), axis=1) / side.area
-                gamma = np.linalg.norm(np.cross(side_p3, side_p4, axis=1), axis=1) / side.area
-                delta = np.linalg.norm(np.cross(side_p4, side_p1, axis=1), axis=1) / side.area
-
-                perc = alpha + beta + gamma + delta
-                truth = np.logical_and(truth, perc <= 1.0000000000000018)
-
-                points[truth] = np.floor(np.einsum('ij,ijk->ik', point[truth], faces[5][truth]))
-                point_count[truth] += 1
-                # if len(self.prog) >= 2 and self.prog[-1] == 2.0:
-                #    print("debug")
-
-                # bc
-
-                rel = -(np.sum(side.normal * faces[0][:, 1], axis=1) + side.d) / np.sum(side.normal
-                                                                                        * (faces[0][:, 2]
-                                                                                           - faces[0][:, 1]), axis=1)
-                truth = np.logical_and(np.isfinite(rel), rel < 1)
-                truth = np.logical_and(truth, rel > 0)
-
-                p = faces[0][:, 1] + (faces[0][:, 2] - faces[0][:, 1]) * np.transpose(np.asarray([rel] * 3))
-
-                dis = np.sum(side.normal * p, axis=1) + side.d
-                point = p + side.normal * np.transpose(np.asarray([dis] * 3))
-                side_p1 = side.p1 - point
-                side_p2 = side.p2 - point
-                side_p3 = side.p3 - point
-                side_p4 = side.p4 - point
-                alpha = np.linalg.norm(np.cross(side_p1, side_p2, axis=1), axis=1) / side.area
-                beta = np.linalg.norm(np.cross(side_p2, side_p3, axis=1), axis=1) / side.area
-                gamma = np.linalg.norm(np.cross(side_p3, side_p4, axis=1), axis=1) / side.area
-                delta = np.linalg.norm(np.cross(side_p4, side_p1, axis=1), axis=1) / side.area
-
-                perc = alpha + beta + gamma + delta
-                truth = np.logical_and(truth, perc <= 1.0000000000000018)
-
-                points[truth] = np.floor(np.einsum('ij,ijk->ik', point[truth], faces[5][truth]))
-                point_count[truth] += 1
-                # if len(self.prog) >= 2 and self.prog[-1] == 2.0:
-                #    print("debug")
-
-            # if any(point_count == 1) or any(point_count == 2):
-            #    print(np.where(point_count == 1))
-            #    print(np.where(point_count == 2))
+            points[truth] = np.floor(np.einsum('ij,ijk->ik', point[truth], self.parent_faces[5][truth]))
+            point_count[truth] += 1
+            # if len(self.prog) >= 2 and self.prog[-1] == 2.0:
             #    print("debug")
-            truth = point_count >= 3
-            self.faces = [faces[0][truth],
-                          faces[1][truth],
-                          faces[2][truth],
-                          faces[3][truth],
-                          faces[4][truth],
-                          faces[5][truth]]
 
-            if any(truth) and self.size == 1:
-                self.cube[0, 0, 0] = texture(points[truth])
+        # if any(point_count == 1) or any(point_count == 2):
+        #    print(np.where(point_count == 1))
+        #    print(np.where(point_count == 2))
+        #    print("debug")
+        truth = point_count >= 3
+        self.faces = [self.parent_faces[0][truth],
+                      self.parent_faces[1][truth],
+                      self.parent_faces[2][truth],
+                      self.parent_faces[3][truth],
+                      self.parent_faces[4][truth],
+                      self.parent_faces[5][truth]]
 
-            # print(f"Took: {perf_counter() - t0} [s]")
-            if self.size > 1:
-                if len(self.faces[0]) > 0:
-                    self.children = []
-                    for x in np.arange(0, 1, 0.5):
-                        for y in np.arange(0, 1, 0.5):
-                            for z in np.arange(0, 1, 0.5):
-                                newprog = deepcopy(self.prog)
-                                newprog.append(8 * x + 4 * y + 2 * z)
-                                new_pos = np.array(
-                                    [self.pos[0] + (-1 / 4 + x) * self.size, self.pos[1] + (-1 / 4 + y) * self.size,
-                                     self.pos[2] + (-1 / 4 + z) * self.size])
-                                self.children.append(Block(new_pos, self.size / 2, self.faces, newprog))
-                                self.calcs += self.children[-1].calcs
+        if any(truth) and self.size == 1:
+            self.cube[0, 0, 0] = texture(points[truth])
 
-                    if size <= 16:
-                        for c in self.children:
-                            rel_pos = [0, 0, 0]
-                            if self.pos[0] < c.pos[0]:
-                                rel_pos[0] = self.size / 2
-                            if self.pos[1] < c.pos[1]:
-                                rel_pos[1] = self.size / 2
-                            if self.pos[2] < c.pos[2]:
-                                rel_pos[2] = self.size / 2
-                            self.cube[int(rel_pos[0]):int(rel_pos[0] + self.size / 2),
-                            int(rel_pos[1]):int(rel_pos[1] + self.size / 2),
-                            int(rel_pos[2]):int(rel_pos[2] + self.size / 2)] = c.cube
-                    if size == 16 and np.any(self.cube != "0"):
-                        export(self.cube, pos)
+        # print(f"Took: {perf_counter() - t0} [s]")
 
-                    self.children.clear()
+    def subdivide(self):
+        if self.size > 1:
+            if len(self.faces[0]) > 0:
+                for x in np.arange(0, 1, 0.5):
+                    for y in np.arange(0, 1, 0.5):
+                        for z in np.arange(0, 1, 0.5):
+                            newprog = deepcopy(self.prog)
+                            newprog.append(8 * x + 4 * y + 2 * z)
+                            new_pos = np.array(
+                                [self.pos[0] + (-1 / 4 + x) * self.size, self.pos[1] + (-1 / 4 + y) * self.size,
+                                 self.pos[2] + (-1 / 4 + z) * self.size])
+                            self.children.append(Block(new_pos, self.size / 2, self.faces, newprog))
+                            self.calcs += self.children[-1].calcs
+
+                if size <= 16:
+                    for c in self.children:
+                        rel_pos = [0, 0, 0]
+                        if self.pos[0] < c.pos[0]:
+                            rel_pos[0] = self.size / 2
+                        if self.pos[1] < c.pos[1]:
+                            rel_pos[1] = self.size / 2
+                        if self.pos[2] < c.pos[2]:
+                            rel_pos[2] = self.size / 2
+                        self.cube[int(rel_pos[0]):int(rel_pos[0] + self.size / 2),
+                        int(rel_pos[1]):int(rel_pos[1] + self.size / 2),
+                        int(rel_pos[2]):int(rel_pos[2] + self.size / 2)] = c.cube
+                if size == 16 and np.any(self.cube != "0"):
+                    export(self.cube, pos)
+
+                self.children.clear()
 
 
 class Mesh:
